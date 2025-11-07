@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CBS Sort Data By Date & Group Excel File Processor</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+   .container { max-width: 1200px; margin: 0 auto; }
+    .header { 
+      margin-bottom: 20px; 
+      text-align: center;
+      padding-bottom: 15px;
+      border-bottom: 1px solid #eee;
+    }
+    .header h1 {
+      color: #2c3e50;
+      margin-bottom: 10px;
+    }
+    .header p {
+      color: #7f8c8d;
+      max-width: 800px;
+      font-size: 1.6rem;
+      margin: 0 auto;
+    }
+    .actions { 
+      margin-bottom: 20px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 15px;
+      background-color: #fff;
+      border-radius: 6px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .actions > * { margin-right: 10px; }
+      table { border-collapse: collapse; margin-top: 20px; width: 100%; }
+    th, td { border: 1px solid #ddd; padding: 4px; text-align: center; }
+    th { background-color: #f8f7f7; }
+    .hidden { display: none; }
+    
+    /* New styles for form elements */
+    input[type="date"],
+    input[type="file"] {
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    button {
+      padding: 10px 16px;
+      border: none;
+      border-radius: 4px;
+      background-color: #3498db;
+      color: white;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background-color 0.3s;
+    }
+    button:hover {
+      background-color: #2980b9;
+    }
+    button:disabled {
+      background-color: #bdc3c7;
+      cursor: not-allowed;
+    }
+    #exportBtn {
+      background-color: #2ecc71;
+    }
+    #exportBtn:hover {
+      background-color: #27ae60;
+    }
+    #exportBtn.hidden {
+      background-color: #95a5a6;
+    }
+    .date-range {
+      display: flex;
+      align-items: center;
+      gap: 30px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>CBS Sort Data By Date & Group Excel File Processor</h1>
+      <p>Upload an Excel file to sort and group transactions by <strong>date (day/month/year only)</strong></p>
+    </div>
+    <div class="actions">
+      <div class="date-range">
+        <label>From: <input type="date" id="dateFrom" /></label>
+        <label>To: <input type="date" id="dateTo" /></label>
+      </div>
+      <input type="file" id="fileInput" accept=".xlsx" />
+      <button id="processBtn">Process Data</button>
+      <button id="exportBtn" class="hidden">Export as Excel</button>
+    </div>
+    <div id="tableContainer"></div>
+  </div>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const fileInput = document.getElementById('fileInput');
+      const processBtn = document.getElementById('processBtn');
+      const exportBtn = document.getElementById('exportBtn');
+      const tableContainer = document.getElementById('tableContainer');
+      const dateFromInput = document.getElementById('dateFrom');
+      const dateToInput = document.getElementById('dateTo');
+      let processedData = null;
+      processBtn.addEventListener('click', async () => {
+        if (!fileInput.files.length) {
+          alert('Please select a file first');
+          return;
+        }
+        const fromDateStr = dateFromInput.value;
+        const toDateStr = dateToInput.value;
+        if (!fromDateStr || !toDateStr) {
+          alert('Please select both From and To dates');
+          return;
+        }
+        if (new Date(fromDateStr) > new Date(toDateStr)) {
+          alert('From date must be before or equal to To date');
+          return;
+        }
+        const file = fileInput.files[0];
+        const arrayBuffer = await file.arrayBuffer();
+        try {
+          const workbook = new ExcelJS.Workbook();
+          await workbook.xlsx.load(arrayBuffer);
+          const worksheet = workbook.worksheets[0];
+          const { headers, rows } = readSheetWithStyles(worksheet);
+          processedData = processExcelDataWithStyles(headers, rows, fromDateStr, toDateStr);
+          if (processedData) {
+            displayTableWithStyles(processedData);
+            exportBtn.classList.remove('hidden');
+          }
+        } catch (err) {
+          console.error('Error reading Excel file:', err);
+          alert('Error reading Excel file. Please check console for details.');
+        }
+      });
+      exportBtn.addEventListener('click', () => {
+        exportToExcelWithStyles(processedData);
+      });
+      function formatDateKey(dateStr) {
+        const date = new Date(dateStr);
+        if (isNaN(date)) return null;
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      }
+      function formatDateKeyAsDayMonth(dateStr) {
+        const date = new Date(dateStr);
+        if (isNaN(date)) return '';
+        const day = String(date.getDate()).padStart(2, '0');
+        const monthShort = date.toLocaleString('default', { month: 'short' });
+        return `${day}-${monthShort}`;
+      }
+      function getDatesInRange(startStr, endStr) {
+        const start = new Date(startStr);
+        const end = new Date(endStr);
+        const dates = [];
+        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+          dates.push(formatDateKey(d));
+        }
+        return dates;
+      }
+      function readSheetWithStyles(worksheet) {
+        const headers = [];
+        const rows = [];
+        worksheet.getRow(1).eachCell({ includeEmpty: true }, (cell) => {
+          headers.push({ value: cell.value ? cell.value.toString() : '', fill: cell.fill });
+        });
+        worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+          if (rowNumber === 1) return;
+          const rowData = [];
+          row.eachCell({ includeEmpty: true }, (cell) => {
+            rowData.push({ value: cell.value, fill: cell.fill });
+          });
+          rows.push(rowData);
+        });
+        return { headers, rows };
+      }
+      // ✅ Modified to apply group header before first row too
+      function processExcelDataWithStyles(headers, rows, fromDateStr, toDateStr) {
+        const dateCreatedIndex = headers.findIndex(h => h.value.toUpperCase() === 'DATECREATED');
+        const tellerIndex = headers.findIndex(h => h.value.toUpperCase() === 'TELLERNAME');
+        if (dateCreatedIndex === -1 || tellerIndex === -1) {
+          alert('Required columns DATECREATED and/or TELLERNAME not found');
+          return null;
+        }
+        const groupedMap = new Map();
+        rows.forEach(row => {
+          const rawDate = row[dateCreatedIndex]?.value;
+          const key = formatDateKey(rawDate);
+          if (!key) return;
+          if (!groupedMap.has(key)) groupedMap.set(key, []);
+          groupedMap.get(key).push(row);
+        });
+        const allDates = getDatesInRange(fromDateStr, toDateStr);
+        const groupedRows = [];
+        allDates.forEach((dateKey, index) => {
+          const group = groupedMap.get(dateKey);
+          const groupHeader = [
+            headers.map(() => ({ value: null, fill: null })),
+            headers.map(() => ({ value: null, fill: null })),
+            headers.map(() => ({ value: null, fill: null })),
+            headers.map((_, idx) => ({
+              value: idx === tellerIndex ? formatDateKeyAsDayMonth(dateKey) : null,
+              fill: null
+            })),
+            headers
+          ];
+          // Always push group header first, even for the first date
+          groupedRows.push(...groupHeader);
+          if (group && group.length > 0) {
+            groupedRows.push(...group);
+          }
+        });
+        return { headers, rows: groupedRows };
+      }
+      function fillToCss(fill) {
+        if (!fill || fill.pattern !== 'solid') return '';
+        if (fill.fgColor && fill.fgColor.argb) {
+          const argb = fill.fgColor.argb;
+          if (argb.length === 8) {
+            return `background-color: #${argb.substring(2)};`;
+          }
+        }
+        return '';
+      }
+      function displayTableWithStyles(data) {
+        const table = document.createElement('table');
+        const thead = document.createElement('thead');
+        const tbody = document.createElement('tbody');
+        const headerRow = document.createElement('tr');
+        data.headers.forEach(cell => {
+          const th = document.createElement('th');
+          th.textContent = cell.value;
+          const style = fillToCss(cell.fill);
+          if (style) th.style = style;
+          headerRow.appendChild(th);
+        });
+        thead.appendChild(headerRow);
+        data.rows.forEach(rowData => {
+          const row = document.createElement('tr');
+          const isHeaderRow = rowData.length === data.headers.length && rowData.every((cell, i) =>
+            cell.value === data.headers[i].value ||
+            (i === data.headers.findIndex(h => h.value.toUpperCase() === 'DATECREATED') &&
+            typeof cell.value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(cell.value))
+          );
+          if (rowData.every(cell => cell.value === null || cell.value === undefined)) {
+            const td = document.createElement('td');
+            td.colSpan = data.headers.length;
+            td.innerHTML = '&nbsp;';
+            row.appendChild(td);
+          } else if (isHeaderRow) {
+            rowData.forEach(cell => {
+              const th = document.createElement('th');
+              th.textContent = cell.value;
+              const style = fillToCss(cell.fill);
+              if (style) th.style = style;
+              row.appendChild(th);
+            });
+          } else {
+            rowData.forEach(cell => {
+              const td = document.createElement('td');
+              td.textContent = cell.value ?? '';
+              const style = fillToCss(cell.fill);
+              if (style) td.style = style;
+              row.appendChild(td);
+            });
+          }
+          tbody.appendChild(row);
+        });
+        table.appendChild(thead);
+        table.appendChild(tbody);
+        tableContainer.innerHTML = '';
+        tableContainer.appendChild(table);
+      }
+     function exportToExcelWithStyles(data) {
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet('Processed Data');
+
+  // Write header row
+  const headerRow = worksheet.addRow(data.headers.map(h => h.value));
+  data.headers.forEach((h, idx) => {
+    const cell = headerRow.getCell(idx + 1);
+    if (h.fill?.pattern === 'solid' && h.fill.fgColor?.argb) {
+      cell.fill = h.fill;
+    }
+    cell.font = { bold: true };
+  });
+
+  // 🔧 Headers whose data should be cleared
+  const headersToClear = ['A', 'V']; // Replace with actual headers
+  const clearIndexes = data.headers
+    .map((h, i) => headersToClear.includes(h.value) ? i : -1)
+    .filter(i => i !== -1);
+
+  // Helper to detect if a row is the same as header (used in group headers)
+  const isSameAsHeaders = (row) =>
+    row.length === data.headers.length &&
+    row.every((cell, idx) => cell.value === data.headers[idx].value);
+
+  data.rows.forEach(row => {
+    if (row.every(cell => cell.value === null || cell.value === undefined)) {
+      worksheet.addRow([]); // blank row
+    } else {
+      const values = row.map((cell, i) => {
+        // ✅ Clear only data rows, not headers
+        if (!isSameAsHeaders(row) && clearIndexes.includes(i)) {
+          return '';
+        }
+        return cell.value;
+      });
+
+      const newRow = worksheet.addRow(values);
+
+      // Apply styles
+      row.forEach((cell, i) => {
+        const newCell = newRow.getCell(i + 1);
+        if (cell.fill?.pattern === 'solid' && cell.fill.fgColor?.argb) {
+          newCell.fill = cell.fill;
+        }
+
+        if (isSameAsHeaders(row)) {
+          newCell.font = { bold: true };
+        }
+      });
+    }
+  });
+
+  // Adjust column widths
+  worksheet.columns.forEach(column => {
+    let maxLength = 10;
+    column.eachCell({ includeEmpty: true }, (cell) => {
+      const len = (cell.value || '').toString().length;
+      if (len > maxLength) maxLength = len;
+    });
+    column.width = maxLength + 2;
+  });
+
+  // Export
+  workbook.xlsx.writeBuffer().then(buffer => {
+    const blob = new Blob([buffer], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    });
+
+    const originalName = fileInput.files[0]?.name || 'all';
+const baseName = originalName.replace(/\.[^/.]+$/, ''); // remove file extension
+const fileName = `${baseName}_SortByDate.xlsx`;
+        saveAs(blob, fileName);
+  });
+}
+
+    });
+  </script>
+</body>
+</html>

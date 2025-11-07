@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Excel Upload and Export (Data + Summary)</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #f0f4f8;
+      padding: 20px;
+    }
+    .container {
+      max-width: 1000px;
+      margin: auto;
+    }
+    .upload-section {
+      background: #fff;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+      margin-bottom: 30px;
+      text-align: center;
+    }
+    .file-input-label {
+      padding: 12px 24px;
+      background-color: #3498db;
+      color: #fff;
+      border-radius: 5px;
+      cursor: pointer;
+      display: inline-block;
+      font-weight: bold;
+    }
+    input[type="file"] {
+      display: none;
+    }
+    button {
+      padding: 10px 20px;
+      margin: 10px;
+      font-size: 16px;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      color: white;
+      background-color: #2ecc71;
+    }
+    button:disabled {
+      background-color: #bdc3c7;
+      cursor: not-allowed;
+    }
+    #exportBtn {
+      background-color: #9b59b6;
+    }
+    table {
+      border-collapse: collapse;
+      margin: 20px 0;
+      width: 100%;
+      background-color: #fff;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 6px 8px;
+      text-align: center;
+    }
+    th {
+      background-color: #f8f8f8;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="upload-section">
+      <h2>Upload Excel File (Data + Summary per Sheet)</h2>
+      <label class="file-input-label" for="fileInput">Choose Excel File</label>
+      <input type="file" id="fileInput" accept=".xlsx,.xls" />
+      <div id="fileName" style="margin-top:10px; font-style:italic; color:#555;"></div>
+      <div>
+        <button id="processBtn" disabled>Process File</button>
+        <button id="exportBtn" disabled>Export to Excel</button>
+      </div>
+    </div>
+    <div id="tableContainer"></div>
+  </div>
+
+  <script>
+    let selectedFile = null;
+    let sheetSummaries = [];
+
+    document.getElementById('fileInput').addEventListener('change', function (e) {
+      selectedFile = e.target.files[0];
+      document.getElementById('processBtn').disabled = !selectedFile;
+      document.getElementById('exportBtn').disabled = true;
+      document.getElementById('fileName').textContent = selectedFile ? `Selected: ${selectedFile.name}` : '';
+      document.getElementById('tableContainer').innerHTML = '';
+      sheetSummaries = [];
+    });
+
+    document.getElementById('processBtn').addEventListener('click', function () {
+      if (!selectedFile) return;
+
+      const reader = new FileReader();
+      reader.onload = function (e) {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheetNames = workbook.SheetNames;
+        let html = '';
+        sheetSummaries = [];
+
+        sheetNames.forEach((sheetName, index) => {
+          const sheet = workbook.Sheets[sheetName];
+          const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+          if (rows.length === 0) return;
+
+          html += `<h3>Sheet: ${sheetName}</h3>`;
+          html += `<table class="data-table"><tbody>`;
+          const vIndex = rows[0].findIndex(h => h?.toString().toUpperCase() === 'V');
+const totalColumns = rows[0].length;
+
+rows.forEach((row, i) => {
+  html += '<tr>';
+
+  if (i === 0) {
+    // Header row
+    for (let col = 0; col < totalColumns; col++) {
+      html += `<th>${row[col] ?? ''}</th>`;
+    }
+  } else if (i === rows.length - 1 && row.length === 1) {
+    // Last row with only one cell value: place it under V column
+    for (let col = 0; col < totalColumns; col++) {
+      if (col === vIndex) {
+        html += `<td>${row[0]}</td>`;
+      } else {
+        html += `<td></td>`;
+      }
+    }
+  } else {
+    // Other data rows
+    for (let col = 0; col < totalColumns; col++) {
+      html += `<td>${row[col] ?? ''}</td>`;
+    }
+  }
+
+  html += '</tr>';
+});
+
+          html += `</tbody></table>`;
+
+          const summary = [];
+          const header = rows[0];
+          const tellerIndex = header.findIndex(h => h?.toString().toUpperCase() === 'TELLERNAME');
+          const branchIndex = header.findIndex(h => h?.toString().toUpperCase() === 'BRANCHNAME');
+          const pairCounts = {};
+
+          if (tellerIndex !== -1 && branchIndex !== -1) {
+            for (let i = 1; i < rows.length; i++) {
+              const teller = rows[i][tellerIndex];
+              const branch = rows[i][branchIndex] || '';
+              if (teller) {
+                const key = `${teller}||${branch}`;
+                pairCounts[key] = (pairCounts[key] || 0) + 1;
+              }
+            }
+          }
+
+          summary.push(['S/N', 'LOCATION', 'PROCESSOR', 'NUMBER OF OCCURRENCE']);
+          let serial = 1;
+          let totalCount = 0;
+          for (const key in pairCounts) {
+            const [teller, branch] = key.split('||');
+            const count = pairCounts[key];
+            totalCount += count;
+            summary.push([serial++, branch, teller, count]);
+          }
+          summary.push(['', '', '', totalCount]);
+
+          sheetSummaries.push({ sheetName, original: rows, summary });
+
+          html += `<h4>Summary for ${sheetName}</h4>`;
+          html += `<table class="summary-table" style="border-collapse: collapse; width: 100%;" border="1"><tbody>`;
+          summary.forEach((row, i) => {
+            html += '<tr>';
+            row.forEach(cell => {
+              html += i === 0 ? `<th>${cell}</th>` : `<td>${cell}</td>`;
+            });
+            html += '</tr>';
+          });
+          html += `</tbody></table><hr/>`;
+        });
+
+        document.getElementById('tableContainer').innerHTML = html;
+        document.getElementById('exportBtn').disabled = false;
+      };
+
+      reader.readAsArrayBuffer(selectedFile);
+    });
+
+document.getElementById('exportBtn').addEventListener('click', async function () {
+  if (sheetSummaries.length === 0) return alert('No processed sheets found.');
+
+  const ExcelJS = window.ExcelJS;
+  const workbook = new ExcelJS.Workbook();
+
+  sheetSummaries.forEach(sheet => {
+    const worksheet = workbook.addWorksheet(sheet.sheetName);
+
+    const vIndex = sheet.original[0].findIndex(h => h?.toString().toUpperCase() === 'V');
+    const totalColumns = sheet.original[0].length;
+
+    // Add original data with special last-row handling
+    sheet.original.forEach((row, i) => {
+      let rowValues;
+
+      if (i === sheet.original.length - 1 && row.length === 1) {
+        // Last row with only one cell: fill with blanks except vIndex cell
+        rowValues = Array(totalColumns).fill('');
+        if (vIndex !== -1) {
+          rowValues[vIndex] = row[0];
+        } else {
+          // fallback if vIndex not found
+          rowValues[0] = row[0];
+        }
+      } else {
+        // Normal row: use original cells, pad if needed
+        rowValues = [...row];
+        while (rowValues.length < totalColumns) {
+          rowValues.push('');
+        }
+      }
+
+      const excelRow = worksheet.addRow(rowValues);
+
+      if (i === 0) {
+        excelRow.eachCell(cell => cell.font = { bold: true });
+      }
+
+      excelRow.eachCell(cell => {
+        const val = cell.value;
+        if (typeof val === 'string' && /^\d{12,}$/.test(val)) {
+          cell.numFmt = '@';
+        } else if (!isNaN(val) && val.toString().length > 11) {
+          cell.value = val.toString();
+          cell.numFmt = '@';
+        }
+      });
+    });
+
+    // Add space rows
+    worksheet.addRow([]);
+    worksheet.addRow([]);
+
+ // Add summary
+  sheet.summary.forEach((row, i) => {
+  const summaryRow = worksheet.addRow(row);
+
+  summaryRow.eachCell(cell => {
+    // Add thin border and center alignment to each summary cell
+    cell.border = {
+      top: { style: 'thin' },
+      left: { style: 'thin' },
+      bottom: { style: 'thin' },
+      right: { style: 'thin' }
+    };
+    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+  });
+
+  if (i === 0) {
+    summaryRow.eachCell(cell => {
+      cell.font = { bold: true };
+    });
+  }
+});
+
+
+
+        // Auto-width
+        worksheet.columns.forEach(column => {
+          let maxLength = 10;
+          column.eachCell({ includeEmpty: true }, cell => {
+            const val = cell.value ? cell.value.toString() : '';
+            maxLength = Math.max(maxLength, val.length);
+          });
+          column.width = maxLength + 2;
+        });
+      });
+
+      const baseName = selectedFile.name.replace(/\.[^/.]+$/, '');
+      const fileName = `${baseName}_DataWithSummaries.xlsx`;
+
+      workbook.xlsx.writeBuffer().then(buffer => {
+        const blob = new Blob([buffer], {
+          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        });
+        saveAs(blob, fileName);
+      });
+    });
+  </script>
+</body>
+</html>

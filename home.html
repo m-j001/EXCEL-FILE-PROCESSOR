@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Welcome Page</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #f4f4f9;
+      color: #333;
+      margin: 0;
+      padding: 0;
+    }
+
+    header {
+      background: #4a90e2;
+      color: white;
+      padding: 1rem 2rem;
+      text-align: center;
+    }
+
+    main {
+      padding: 2rem;
+      text-align: center;
+    }
+
+    h1 {
+      margin-bottom: 1rem;
+    }
+
+    .link-container {
+      display: flex;
+      justify-content: center;
+      gap: 2rem;
+      margin-top: 2rem;
+    }
+
+    .link-container a {
+      background: #fff;
+      padding: 1rem 2rem;
+      border: 2px solid #4a90e2;
+      border-radius: 8px;
+      text-decoration: none;
+      color: #4a90e2;
+      font-weight: bold;
+      transition: background 0.3s, color 0.3s;
+    }
+
+    .link-container a:hover {
+      background: #4a90e2;
+      color: white;
+    }
+
+    footer {
+      margin-top: 3rem;
+      text-align: center;
+      font-size: 0.9rem;
+      color: #777;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>CBS Transaction Monitoring Excel File Processor</h1>
+  </header>
+
+  <main>
+    <p>Choose File Actions:</p>
+    <div class="link-container">
+      <a href="Pages/downgradesprocessor.html">Sort & Highlight Downgrades</a>
+      <a href="Pages/sortbydate.html">Sort Data By Date & Group</a>
+      <a href="Pages/sortbyoccurrence.html">Sort By Occurrence</a>
+    </div>
+  </main>
+
+  <footer>
+    &copy; 2025 MJ
+  </footer>
+</body>
+</html>

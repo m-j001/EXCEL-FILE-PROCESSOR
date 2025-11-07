@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>CBS Sort & Highlight Downgrades Excel File Processor</title>
+  <!-- External Libraries -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  
+  <style>
+    body { 
+      font-family: Arial, sans-serif; 
+      margin: 20px; 
+      background-color: #f5f7fa;
+    }
+    .container { 
+      max-width: 1200px; 
+      margin: 0 auto; 
+      background-color: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    .header { 
+      margin-bottom: 20px; 
+      text-align: center;
+    }
+    .header p {
+    color: #666;
+    font-size: 16px;
+  }
+    .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 15px;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 25px;
+  }
+    .actions select, .actions button, .actions input {
+      padding: 8px 12px;
+      border-radius: 4px;
+      border: 1px solid #ddd;
+    }
+    .actions button {
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      cursor: pointer;
+      transition: background-color 0.3s;
+    }
+    .actions button:hover {
+      background-color: #45a049;
+    }
+    .actions button#exportBtn {
+      background-color: #2196F3;
+    }
+    .actions button#exportBtn:hover {
+      background-color: #0b7dda;
+    }
+    table { border-collapse: collapse; margin-top: 20px; width: 100%; }
+    th, td { border: 1px solid #ddd; padding: 4px; text-align: center; }
+    th { background-color: #f8f7f7; }
+    .hidden { display: none; }
+    .highlight-yellow { background-color: #FFFF00 !important; }
+    .highlight-green { background-color: #90EE90 !important; }
+    .highlight-blue { background-color: #ADD8E6 !important; }
+    .status-message {
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 4px;
+      text-align: center;
+    }
+    .status-message.success {
+      background-color: #dff0d8;
+      color: #3c763d;
+    }
+    .status-message.error {
+      background-color: #f2dede;
+      color: #a94442;
+    }
+   
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>CBS Sort & Highlight Downgrades Excel File Processor</h1>
+      <p>Upload an Excel file to process data and apply highlighting rules</p>
+    </div>
+    <div class="actions">
+      <select id="stateFilter">
+        <option value="">-- Select State --</option>
+      </select>
+      <input type="file" id="fileInput" accept=".xlsx, .xls" />
+      <button id="processBtn">Process Data</button>
+      <button id="exportBtn" class="hidden">Export as Excel</button>
+      <div id="loadingIndicator" class="hidden loading"></div>
+    </div>
+    <div id="statusMessage" class="status-message hidden"></div>
+    <div id="tableContainer"></div>
+  </div>
+<!-- Keep your existing <head> and styles as-is -->
+<!-- Only the <script> section inside <body> is updated -->
+
+<script>
+  const excelFillStyles = {
+    'highlight-yellow': {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFFFFF00' }
+    },
+    'highlight-green': {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF90EE90' }
+    },
+    'highlight-blue': {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFADD8E6' }
+    }
+  };
+
+  const predefinedStates = ['Lagos', 'Adamawa', 'Benue', 'CrossRiver', 'Ekiti', 'Enugu', 'Kebbi', 'Rivers', 'Yobe', 'Nasarawa', 'Kogi', 'Bauchi', 'Ondo', 'AkwaIbom', 'Ogun', 'Osun', 'Oyo', 'Niger', 'Sokoto'];
+  let highlightConditions = [];
+  let processedData = null;
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const stateFilter = document.getElementById('stateFilter');
+    const loadingIndicator = document.getElementById('loadingIndicator');
+    const statusMessage = document.getElementById('statusMessage');
+
+    function populateStateDropdown(states) {
+      stateFilter.innerHTML = '<option value="">-- Select State --</option>';
+      states.forEach(state => {
+        const option = document.createElement('option');
+        option.value = state;
+        option.textContent = state;
+        stateFilter.appendChild(option);
+      });
+    }
+
+    populateStateDropdown(predefinedStates);
+
+    stateFilter.addEventListener('change', () => {
+      const selectedState = stateFilter.value;
+      if (!selectedState) {
+        highlightConditions = [];
+        return;
+      }
+
+      loadingIndicator.classList.remove('hidden');
+      statusMessage.textContent = `Loading highlight rules for ${selectedState}...`;
+      statusMessage.className = 'status-message';
+
+      const scriptId = 'dynamicHighlightScript';
+      const existingScript = document.getElementById(scriptId);
+      if (existingScript) existingScript.remove();
+
+      const script = document.createElement('script');
+      script.src = `highlightRules-${selectedState}.js`;
+      script.id = scriptId;
+
+      script.onload = () => {
+        loadingIndicator.classList.add('hidden');
+        statusMessage.textContent = `Highlight rules loaded for ${selectedState}`;
+        statusMessage.className = 'status-message success';
+      };
+
+      script.onerror = () => {
+        loadingIndicator.classList.add('hidden');
+        statusMessage.textContent = `Failed to load highlight rules for ${selectedState}`;
+        statusMessage.className = 'status-message error';
+        alert(`Highlight rules for "${selectedState}" not found.`);
+        highlightConditions = [];
+      };
+
+      document.body.appendChild(script);
+    });
+
+    const fileInput = document.getElementById('fileInput');
+    const processBtn = document.getElementById('processBtn');
+    const exportBtn = document.getElementById('exportBtn');
+    const tableContainer = document.getElementById('tableContainer');
+
+    processBtn.addEventListener('click', () => {
+      if (!fileInput.files.length) {
+        showStatus('Please select a file first', 'error');
+        return;
+      }
+
+      if (!stateFilter.value) {
+        showStatus('Please select a state first', 'error');
+        return;
+      }
+
+      const file = fileInput.files[0];
+      loadingIndicator.classList.remove('hidden');
+      showStatus('Processing file...', 'success');
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const data = new Uint8Array(e.target.result);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+          const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+
+          processedData = processExcelData(jsonData);
+          displayTable(processedData);
+          exportBtn.classList.remove('hidden');
+          showStatus('File processed successfully!', 'success');
+        } catch (error) {
+          console.error('Error processing file:', error);
+          showStatus('Error processing file. Please check the console for details.', 'error');
+        } finally {
+          loadingIndicator.classList.add('hidden');
+        }
+      };
+
+      reader.readAsArrayBuffer(file);
+    });
+
+    exportBtn.addEventListener('click', () => {
+      if (!processedData) {
+        showStatus('No data to export', 'error');
+        return;
+      }
+
+      loadingIndicator.classList.remove('hidden');
+      showStatus('Preparing export...', 'success');
+
+      exportToExcel(processedData);
+    });
+
+    function processExcelData(data) {
+      if (!data || data.length < 2) return null;
+
+      const headers = data[0];
+      const dataRows = data.slice(1);
+
+      const requiredColumns = ['MAKEMODEL', 'VEHICLE', 'TRANSACTIONAMOUNT'];
+      for (const col of requiredColumns) {
+        if (headers.indexOf(col) === -1) {
+          showStatus(`Required column "${col}" not found in the file`, 'error');
+          return null;
+        }
+      }
+
+      const columnsToDelete = ['COMPANYNAME', 'MNTREF', 'STATESERVICERATECODE'];
+      const deleteIndices = columnsToDelete.map(col => headers.indexOf(col)).filter(i => i !== -1);
+
+      const newHeaders = headers.filter((_, i) => !deleteIndices.includes(i));
+      const newDataRows = dataRows.map(row => row.filter((_, i) => !deleteIndices.includes(i)));
+
+      const vehicleIndex = newHeaders.indexOf('VEHICLE');
+      if (vehicleIndex !== -1) {
+        newHeaders.splice(vehicleIndex + 1, 0, 'A');
+        newDataRows.forEach(row => row.splice(vehicleIndex + 1, 0, ''));
+      }
+
+      const taIndex = newHeaders.indexOf('TRANSACTIONAMOUNT');
+      if (taIndex !== -1) {
+        newHeaders.splice(taIndex + 1, 0, 'V');
+        newDataRows.forEach(row => row.splice(taIndex + 1, 0, ''));
+      }
+
+     const rowStyles = newDataRows.map(row => {
+  for (const condition of highlightConditions) {
+    if (condition.condition(row, newHeaders)) {
+      const aIndex = newHeaders.indexOf('A');
+      const vIndex = newHeaders.indexOf('V');
+      const taIndex = newHeaders.indexOf('TRANSACTIONAMOUNT');
+
+      const numericName = parseFloat(condition.name); // name holds the threshold
+      const transactionAmount = parseFloat(row[taIndex]);
+
+      // Insert threshold into A column
+      if (aIndex !== -1 && !isNaN(numericName)) {
+        row[aIndex] = numericName;
+      }
+
+      // Insert (threshold - actual) into V column
+      if (vIndex !== -1 && !isNaN(numericName) && !isNaN(transactionAmount)) {
+        row[vIndex] = numericName - transactionAmount;
+      }
+
+      return {
+        styleClass: condition.style,
+        fillStyle: excelFillStyles[condition.style] || condition.fill
+      };
+    }
+  }
+
+  return { styleClass: '', fillStyle: null };
+});
+
+      // ✅ NEW SORT: Highlighted rows first, then by MAKEMODEL
+      const makeModelIndex = newHeaders.indexOf('MAKEMODEL');
+      const combined = newDataRows.map((row, index) => ({
+        row,
+        style: rowStyles[index]
+      }));
+
+      combined.sort((a, b) => {
+        const aHighlight = a.style.styleClass ? 1 : 0;
+        const bHighlight = b.style.styleClass ? 1 : 0;
+        if (aHighlight !== bHighlight) {
+          return bHighlight - aHighlight;
+        }
+        const aMake = a.row[makeModelIndex] || '';
+        const bMake = b.row[makeModelIndex] || '';
+        return aMake.localeCompare(bMake);
+      });
+
+      newDataRows.length = 0;
+      rowStyles.length = 0;
+      for (const item of combined) {
+        newDataRows.push(item.row);
+        rowStyles.push(item.style);
+      }
+
+      return { headers: newHeaders, rows: newDataRows, styles: rowStyles };
+    }
+
+    function displayTable(data) {
+      if (!data || !data.rows) return;
+
+      tableContainer.innerHTML = '';
+      const table = document.createElement('table');
+      table.id = 'dataTable';
+
+      const thead = document.createElement('thead');
+      const headerRow = document.createElement('tr');
+      data.headers.forEach(header => {
+        const th = document.createElement('th');
+        th.textContent = header;
+        headerRow.appendChild(th);
+      });
+      thead.appendChild(headerRow);
+      table.appendChild(thead);
+
+      const tbody = document.createElement('tbody');
+      for (let i = 0; i < data.rows.length; i++) {
+        const row = document.createElement('tr');
+        const styleObj = data.styles[i];
+
+        if (styleObj.styleClass) {
+          row.classList.add(styleObj.styleClass);
+        }
+
+        data.rows[i].forEach(cellData => {
+          const td = document.createElement('td');
+          td.textContent = cellData;
+          row.appendChild(td);
+        });
+
+        tbody.appendChild(row);
+      }
+
+      table.appendChild(tbody);
+      tableContainer.appendChild(table);
+    }
+
+    function exportToExcel(data) {
+      if (!data) return;
+
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Processed Data');
+
+      worksheet.addRow(data.headers);
+
+      data.rows.forEach((row, index) => {
+        const newRow = worksheet.addRow(row);
+        const styleObj = data.styles[index];
+
+        if (styleObj.fillStyle) {
+          newRow.eachCell(cell => {
+            cell.fill = styleObj.fillStyle;
+          });
+        }
+      });
+
+      worksheet.columns.forEach(column => {
+        let maxLength = 10;
+        column.eachCell({ includeEmpty: true }, cell => {
+          const len = (cell.value || '').toString().length;
+          if (len > maxLength) maxLength = len;
+        });
+        column.width = Math.min(maxLength + 2, 50);
+      });
+
+      worksheet.views = [{ state: 'frozen', ySplit: 1 }];
+
+      workbook.xlsx.writeBuffer().then(buffer => {
+        const blob = new Blob([buffer], {
+          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        });
+
+      
+        const originalName = fileInput.files[0]?.name || 'all';
+const baseName = originalName.replace(/\.[^/.]+$/, ''); // remove file extension
+const fileName = `${baseName}_Processed.xlsx`;
+        saveAs(blob, fileName);
+
+        loadingIndicator.classList.add('hidden');
+        showStatus(`File exported successfully as ${fileName}`, 'success');
+      });
+    }
+
+    function showStatus(message, type) {
+      statusMessage.textContent = message;
+      statusMessage.className = `status-message ${type}`;
+      statusMessage.classList.remove('hidden');
+
+      if (type === 'success') {
+        setTimeout(() => {
+          statusMessage.classList.add('hidden');
+        }, 5000);
+      }
+    }
+  });
+</script>
+
+</body>
+</html>
